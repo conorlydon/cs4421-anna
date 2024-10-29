@@ -1,0 +1,16 @@
+public class ByteFormatter {
+    // Static method to format bytes into a readable form (GB, MB, KB)
+    public static String formatBytes(long bytes) {
+        double kilobytes = bytes / 1024.0;
+        double megabytes = kilobytes / 1024.0;
+        double gigabytes = megabytes / 1024.0;
+
+        if (gigabytes >= 1) {
+            return String.format("%.2f GB", gigabytes);
+        } else if (megabytes >= 1) {
+            return String.format("%.2f MB", megabytes);
+        } else {
+            return String.format("%.2f KB", kilobytes);
+        }
+    }
+}
