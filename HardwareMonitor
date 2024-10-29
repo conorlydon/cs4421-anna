@@ -1,0 +1,248 @@
+import javax.swing.*; // contains classes such as JButton, JFrame, JPanel, and JTextArea (GUI for the project)
+import java.awt.*; // import used to alter the visuals of the GUI
+import java.util.List; // import for using List
+import oshi.SystemInfo; // import of classes that retrieve hardware info from the computer
+import oshi.hardware.CentralProcessor;// import of classes to fetch cpu data
+import oshi.hardware.GlobalMemory;// import used in SSD method
+import oshi.hardware.HWDiskStore;
+import oshi.hardware.HardwareAbstractionLayer;//core class that provides info on various types of hardware
+import oshi.software.os.OperatingSystem;
+import oshi.hardware.UsbDevice;
+import oshi.software.os.OSFileStore;
+
+public class HardwareMonitor {
+//creates an instance variable for the object "System info"
+    //the entry point for accessing all hardware
+    private static SystemInfo systemInfo = new SystemInfo();
+    //get hardware object initialisation which provides objects such as getMemory
+    private static HardwareAbstractionLayer hardware = systemInfo.getHardware();
+    //only used for object getFileSystem to find amount of memory left available
+    private static OperatingSystem os = systemInfo.getOperatingSystem();
+    private static JTextArea cpuUsageArea; //area to display CPU usage
+
+    //arrays to store CPU usage history and RAM info
+    private static final int MAX_HISTORY = 10; //store the last 10 readings
+    private static double[] cpuLoadHistory = new double[MAX_HISTORY];
+    private static int historyIndex = 0; //index for the history array
+
+    public static void main(String[] args) {
+        //create a pop up window
+        JFrame frame = new JFrame("Hardware Information");
+        frame.setSize(600, 500);
+        //stop executing when windows closed
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+        //create buttons for CPU, RAM, SSD, Disk Info, USB/PCI Info, CPU Monitor, and Clear Data
+        JButton cpuButton = new JButton("Get CPU Info");
+        JButton ramButton = new JButton("Get RAM Info");
+        JButton ssdButton = new JButton("Get SSD Info");
+        JButton diskButton = new JButton("Get Disk Info");
+        JButton usbButton = new JButton("Get USB and PCI Info");
+        JButton monitorCpuButton = new JButton("Monitor CPU Usage");
+        JButton clearButton = new JButton("Clear Data");
+
+
+        Color buttonColor = new Color(0, 255, 0);//define a color for the buttons
+        Color clearbuttonColor = new Color(255, 0, 0);
+        cpuButton.setBackground(buttonColor);
+        ramButton.setBackground(buttonColor);
+        ssdButton.setBackground(buttonColor);
+        diskButton.setBackground(buttonColor);
+        usbButton.setBackground(buttonColor);
+        monitorCpuButton.setBackground(buttonColor);
+        clearButton.setBackground(clearbuttonColor);
+
+        // Set the size for buttons to make them square and symmetrical
+        Dimension buttonSize = new Dimension(120, 120);
+        cpuButton.setPreferredSize(buttonSize);
+        ramButton.setPreferredSize(buttonSize);
+        ssdButton.setPreferredSize(buttonSize);
+        diskButton.setPreferredSize(buttonSize);
+        usbButton.setPreferredSize(buttonSize);
+
+        // Add action listeners for each button
+        cpuButton.addActionListener(e -> showCpuInfo());
+        ramButton.addActionListener(e -> showRamInfo());
+        ssdButton.addActionListener(e -> showSsdInfo());
+        diskButton.addActionListener(e -> showDiskInfo());
+        usbButton.addActionListener(e -> showUsbInfo());
+        monitorCpuButton.addActionListener(e -> startCpuMonitoring());
+        clearButton.addActionListener(e -> cpuUsageArea.setText(""));
+
+        // Use a JPanel with GridLayout to arrange buttons in a symmetrical layout
+        JPanel buttonPanel = new JPanel(new GridLayout(3, 3)); // 3 rows, 3 columns
+        buttonPanel.add(cpuButton);
+        buttonPanel.add(ramButton);
+        buttonPanel.add(ssdButton);
+        buttonPanel.add(diskButton);
+        buttonPanel.add(usbButton);
+        buttonPanel.add(monitorCpuButton);
+        buttonPanel.add(clearButton);
+
+        // Create a JTextArea to display CPU usage
+        cpuUsageArea = new JTextArea();
+        cpuUsageArea.setEditable(false); // Make it read-only
+        cpuUsageArea.setLineWrap(true);
+        cpuUsageArea.setWrapStyleWord(true);
+
+        JScrollPane scrollPane = new JScrollPane(cpuUsageArea);
+        scrollPane.setPreferredSize(new Dimension(400, 200));
+
+        // Add both panels to the main frame
+        frame.setLayout(new BorderLayout());
+        frame.add(buttonPanel, BorderLayout.NORTH);
+        frame.add(scrollPane, BorderLayout.CENTER);
+
+        //make the frame visible to the user
+        frame.setVisible(true);
+    }
+
+    //method to display CPU information
+    private static void showCpuInfo() {
+        CentralProcessor processor = hardware.getProcessor();
+        long[] frequencies = processor.getCurrentFreq();
+
+        //get the previous CPU ticks
+        long[] prevTicks = processor.getSystemCpuLoadTicks();
+
+        try {
+            Thread.sleep(1000); // Wait 1 second to calculate CPU load
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        // Get the new CPU clock cycle after the sleep
+        double cpuLoad = processor.getSystemCpuLoadBetweenTicks(prevTicks) * 100;
+        displayCpuInfo(processor, frequencies, cpuLoad);
+    }
+
+    // Method to display CPU information and clear previous usage
+    private static void displayCpuInfo(CentralProcessor processor, long[] frequencies, double cpuLoad) {
+        cpuUsageArea.setText("");
+        cpuUsageArea.append("CPU Model: " + processor.getProcessorIdentifier().getName() +
+                "\nPhysical Cores: " + processor.getPhysicalProcessorCount() +
+                "\nLogical Cores: " + processor.getLogicalProcessorCount() +
+                "\nCPU Frequency (in Hz): " + (frequencies.length > 0 ? frequencies[0] : "Unknown") +
+                "\nCPU Load: " + String.format("%.2f", cpuLoad) + "%\n\n");
+    }
+
+    // Method to start monitoring CPU usage
+    private static void startCpuMonitoring() {
+        new Thread(() -> {
+            CentralProcessor processor = hardware.getProcessor();
+            long[][] prevTicks = processor.getProcessorCpuLoadTicks();
+
+            while (true) {
+                try {
+                    Thread.sleep(10000); //wait 10 seconds to update CPU load
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                long[][] ticks = processor.getProcessorCpuLoadTicks();
+                double[] loadPercentages = new double[ticks.length];
+                for (int i = 0; i < ticks.length; i++) {
+                    loadPercentages[i] = getCpuLoadBetweenTicks(prevTicks[i], ticks[i]) * 100;
+                }
+
+                prevTicks = ticks;
+
+                //store CPU load in history
+                double averageLoad = 0.0;
+                for (int i = 0; i < loadPercentages.length; i++) {
+                    cpuLoadHistory[historyIndex] = loadPercentages[i];
+                    averageLoad += loadPercentages[i];
+                    historyIndex = (historyIndex + 1) % MAX_HISTORY; // Circular buffer
+                }
+                averageLoad /= loadPercentages.length;
+
+                StringBuilder output = new StringBuilder("CPU Usage per core:\n");
+                for (int i = 0; i < loadPercentages.length; i++) {
+                    output.append(String.format("Core %d: %.2f%%\n", i, loadPercentages[i]));
+                }
+                output.append(String.format("Average CPU Load: %.2f%%\n", averageLoad));
+                output.append("------------------------------------\n");
+
+                SwingUtilities.invokeLater(() -> {
+                    // Clear existing text and set the new CPU usage info
+                    cpuUsageArea.setText(output.toString());
+                });
+            }
+        }).start();
+    }
+
+    // Method to calculate CPU load between two clock cycles
+    private static double getCpuLoadBetweenTicks(long[] oldTicks, long[] newTicks) {
+        long totalCpu = 0;
+        long totalIdle = 0;
+
+        for (int i = 0; i < CentralProcessor.TickType.values().length; i++) {
+            totalCpu += (newTicks[i] - oldTicks[i]);
+            if (CentralProcessor.TickType.IDLE == CentralProcessor.TickType.values()[i]) {
+                totalIdle += (newTicks[i] - oldTicks[i]);
+            }
+        }
+
+        return totalCpu > 0 ? (double) (totalCpu - totalIdle) / totalCpu : 0.0;
+    }
+
+    //method to display RAM information
+    private static void showRamInfo() {
+        GlobalMemory memory = hardware.getMemory();
+        long totalMemory = memory.getTotal();
+        long availableMemory = memory.getAvailable();
+
+        cpuUsageArea.append("Total RAM: " + ByteFormatter.formatBytes(totalMemory) +
+                "\nAvailable RAM: " + ByteFormatter.formatBytes(availableMemory) + "\n\n");
+    }
+
+    //method to display SSD information
+    private static void showSsdInfo() {
+        StringBuilder ssdInfo = new StringBuilder();
+        for (HWDiskStore disk : hardware.getDiskStores()) {
+            long totalDiskSize = disk.getSize();
+
+            for (OSFileStore fs : os.getFileSystem().getFileStores()) {
+                ssdInfo.append(String.format(
+                        "SSD Model: %s\nTotal Size: %s\nAvailable Space: %s\n\n",
+                        disk.getModel(),
+                        ByteFormatter.formatBytes(totalDiskSize),
+                        ByteFormatter.formatBytes(fs.getUsableSpace())
+                ));
+            }
+        }
+        cpuUsageArea.append("SSD Information:\n" + ssdInfo);
+    }
+
+    //method to display Disk information
+    private static void showDiskInfo() {
+        StringBuilder diskInfo = new StringBuilder();
+        for (HWDiskStore disk : hardware.getDiskStores()) {
+            diskInfo.append("Disk Model: ").append(disk.getModel())
+                    .append("\nTotal Size: ").append(ByteFormatter.formatBytes(disk.getSize()))
+                    .append("\n\n");
+        }
+        cpuUsageArea.append("Disk Information:\n" + diskInfo);
+    }
+
+    //method to display USB information
+    private static void showUsbInfo() {
+        List<UsbDevice> usbDevices = hardware.getUsbDevices(false);
+        StringBuilder usbInfo = new StringBuilder("USB Devices:\n");
+
+        if (usbDevices.isEmpty()) {
+            usbInfo.append("No USB devices found.\n");
+        } else {
+            for (UsbDevice device : usbDevices) {
+                usbInfo.append("Device Name: ").append(device.getName())
+                        .append("\nVendor: ").append(device.getVendor())
+                        .append("\nProduct ID: ").append(device.getProductId())
+                        .append("\nSerial Number: ").append(device.getSerialNumber())
+                        .append("\nUnique Device ID: ").append(device.getUniqueDeviceId())
+                        .append("\n\n");
+            }
+            usbInfo.append("Number of USB devices found: ").append(usbDevices.size()).append("\n");
+        }
+        cpuUsageArea.append(usbInfo.toString());
+    }
+}
